@@ -16,6 +16,7 @@ class Parameter:
 
 @dataclass(frozen=True)
 class ProjectConfig:
+    method: str
     source_file: Path
     input_dir: Path
     work_dir: Path

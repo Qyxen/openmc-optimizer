@@ -11,6 +11,7 @@ from typing import TypeAlias
 from .config import Parameter, ProjectConfig
 from .evaluator import OpenMCEvaluator
 from .ga import optimize
+from .bayesian import optimize_bayesian
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ class OptimizationResult:
 
 
 class OpenMCOptimizer:
-    """Minimize assembly PPF, optionally subject to a target k-effective.
+    """Optimize assembly power using a genetic or Bayesian search.
 
     Parameters are provided as ``MaterialFraction`` or ``VolumeFraction``
     objects. The optimizer copies XML inputs for every
@@ -105,6 +106,7 @@ class OpenMCOptimizer:
         *,
         model_dir: str | Path,
         variables: list[DesignVariable],
+        method: str = "genetic",
         assembly_cell_ids: list[int] | tuple[int, ...] | None = None,
         target_ppf: float | None = None,
         target_keff: float | None = None,
@@ -125,16 +127,24 @@ class OpenMCOptimizer:
     ):
         if not variables:
             raise ValueError("Provide at least one design variable")
+        if method not in ("genetic", "bayesian"):
+            raise ValueError("method must be 'genetic' or 'bayesian'")
         if assembly_cell_ids is not None and (
             not assembly_cell_ids or any(cell_id <= 0 for cell_id in assembly_cell_ids)
         ):
             raise ValueError("assembly_cell_ids must contain positive cell IDs")
         if len({variable.parameter_name for variable in variables}) != len(variables):
             raise ValueError("Design variable names must be unique")
-        if population_size < 10 or not 1 <= elite_count < population_size:
-            raise ValueError("Require initial population_size >= 10 and 1 <= elite_count < population_size")
-        if generations < 1 or not 0.0 <= mutation_rate <= 1.0 or mutation_scale < 0.0:
-            raise ValueError("Invalid genetic algorithm generation or mutation settings")
+        if population_size < 10:
+            raise ValueError("Require initial population_size >= 10")
+        if method == "genetic" and not 1 <= elite_count < population_size:
+            raise ValueError("Require 1 <= elite_count < population_size for the genetic method")
+        if generations < 1:
+            raise ValueError("generations must be at least 1")
+        if method == "genetic" and (
+            not 0.0 <= mutation_rate <= 1.0 or mutation_scale < 0.0
+        ):
+            raise ValueError("Invalid genetic algorithm mutation settings")
         if target_ppf is not None and target_ppf <= 0.0:
             raise ValueError("target_ppf must be positive")
         if target_keff is not None and target_keff <= 0.0:
@@ -147,7 +157,7 @@ class OpenMCOptimizer:
             raise ValueError("ppf_weight must be positive when target_keff is not set")
         if ppf_scale <= 0.0:
             raise ValueError("ppf_scale must be positive")
-        if not 0.0 <= population_reduction_rate < 1.0:
+        if method == "genetic" and not 0.0 <= population_reduction_rate < 1.0:
             raise ValueError("population_reduction_rate must be in [0, 1)")
 
         parameters = []
@@ -183,6 +193,7 @@ class OpenMCOptimizer:
             bindings[variable.parameter_name] = variable.binding()
 
         self.config = ProjectConfig(
+            method=method,
             source_file=Path.cwd() / "python-api",
             input_dir=Path(model_dir).expanduser().resolve(),
             work_dir=Path(work_dir).expanduser().resolve(),
@@ -211,12 +222,13 @@ class OpenMCOptimizer:
         )
 
     def run(self) -> OptimizationResult:
-        """Run the genetic algorithm and return its best candidate."""
+        """Run the selected optimization method and return its best candidate."""
         config = self.config
         if not config.input_dir.is_dir():
             raise FileNotFoundError(f"OpenMC model directory not found: {config.input_dir}")
 
         initial_data = [
+            ("Optimization method", config.method),
             ("Model directory", str(config.input_dir)),
             ("Work directory", str(config.work_dir)),
             ("Target PPF", "Not set" if config.target_ppf is None else f"{config.target_ppf:g}"),
@@ -225,16 +237,25 @@ class OpenMCOptimizer:
             ("PPF objective weight", f"{config.ppf_weight:g}"),
             ("keff objective weight", f"{config.keff_weight:g}"),
             ("PPF normalization scale", f"{config.ppf_scale:g}"),
-            ("Initial population size", str(config.population_size)),
-            ("Minimum population size", "10"),
-            ("Population reduction per generation", f"{config.population_reduction_rate:.0%}"),
-            ("Generations", str(config.generations)),
-            ("Elite count", str(config.elite_count)),
-            ("Mutation rate", f"{config.mutation_rate:g}"),
-            ("Mutation scale", f"{config.mutation_scale:g}"),
             ("Random seed", str(config.seed)),
             ("Statepoint file", config.statepoint_file),
         ]
+        if config.method == "genetic":
+            initial_data.extend([
+                ("Initial population size", str(config.population_size)),
+                ("Minimum population size", "10"),
+                ("Population reduction per generation", f"{config.population_reduction_rate:.0%}"),
+                ("Generations", str(config.generations)),
+                ("Elite count", str(config.elite_count)),
+                ("Mutation rate", f"{config.mutation_rate:g}"),
+                ("Mutation scale", f"{config.mutation_scale:g}"),
+            ])
+        else:
+            initial_data.extend([
+                ("Initial design samples", str(config.population_size)),
+                ("Sequential BO iterations", str(config.generations)),
+                ("Candidate pool size", "4096"),
+            ])
         initial_data.extend(
             (f"{parameter.name} bounds", f"[{parameter.lower:g}, {parameter.upper:g}]")
             for parameter in config.parameters
@@ -251,23 +272,38 @@ class OpenMCOptimizer:
         print(border)
 
         evaluator = OpenMCEvaluator(config)
-        best_parameters, best_result, history = optimize(
-            config.parameters,
-            evaluator,
-            population_size=config.population_size,
-            generations=config.generations,
-            elite_count=config.elite_count,
-            mutation_rate=config.mutation_rate,
-            mutation_scale=config.mutation_scale,
-            seed=config.seed,
-            target_ppf=config.target_ppf,
-            target_keff=config.target_keff,
-            keff_tolerance=config.keff_tolerance,
-            ppf_weight=config.ppf_weight,
-            keff_weight=config.keff_weight,
-            ppf_scale=config.ppf_scale,
-            population_reduction_rate=config.population_reduction_rate,
-        )
+        if config.method == "genetic":
+            best_parameters, best_result, history = optimize(
+                config.parameters,
+                evaluator,
+                population_size=config.population_size,
+                generations=config.generations,
+                elite_count=config.elite_count,
+                mutation_rate=config.mutation_rate,
+                mutation_scale=config.mutation_scale,
+                seed=config.seed,
+                target_ppf=config.target_ppf,
+                target_keff=config.target_keff,
+                keff_tolerance=config.keff_tolerance,
+                ppf_weight=config.ppf_weight,
+                keff_weight=config.keff_weight,
+                ppf_scale=config.ppf_scale,
+                population_reduction_rate=config.population_reduction_rate,
+            )
+        else:
+            best_parameters, best_result, history = optimize_bayesian(
+                config.parameters,
+                evaluator,
+                initial_samples=config.population_size,
+                iterations=config.generations,
+                seed=config.seed,
+                target_ppf=config.target_ppf,
+                target_keff=config.target_keff,
+                keff_tolerance=config.keff_tolerance,
+                ppf_weight=config.ppf_weight,
+                keff_weight=config.keff_weight,
+                ppf_scale=config.ppf_scale,
+            )
         keff_target_reached = (
             None if config.target_keff is None
             else abs(best_result["keff"] - config.target_keff) <= config.keff_tolerance
@@ -281,6 +317,7 @@ class OpenMCOptimizer:
             target_reached = ppf_reached and keff_reached
         summary = {
             "best_parameters": best_parameters,
+            "method": config.method,
             "best_result": best_result,
             "target_ppf": config.target_ppf,
             "target_keff": config.target_keff,

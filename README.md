@@ -1,10 +1,10 @@
 # OpenMC Optimizer
 
-A small, project-style optimization driver for OpenMC models. The initial
-search method is a bounded real-valued genetic algorithm. Its built-in
-objective is to minimize assembly power peaking factor (PPF), optionally while
+A small, project-style optimization driver for OpenMC models. It provides a
+bounded real-valued genetic algorithm and constrained Bayesian optimization.
+Both methods minimize assembly power peaking factor (PPF), optionally while
 keeping k-effective within a user-set tolerance of a target. The design
-variables are independent of the objective, so the same search can vary
+variables are independent of the objective, so either method can vary
 enrichment or Gd₂O₃ rod loading using the built-in material adapter.
 
 ## Install
@@ -15,6 +15,9 @@ Then install this project:
 ```bash
 python -m pip install -e .
 ```
+
+Scikit-learn is installed as a required dependency, so both optimization
+methods are available after the standard install.
 
 ## Documentation
 

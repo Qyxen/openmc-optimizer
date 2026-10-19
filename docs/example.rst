@@ -3,9 +3,8 @@ Examples
 
 This page shows a complete setup for optimizing assembly power peaking factor
 (PPF) and k-effective with the OpenMC Optimizer Python API.
-The API edits copies of the model XML files for each genetic algorithm
-candidate, adds its PPF tally, runs OpenMC, and reads PPF and keff from each
-statepoint.
+The API edits copies of the model XML files for each candidate, adds its PPF
+tally, runs OpenMC, and reads PPF and keff from each statepoint.
 
 Requirements
 ------------
@@ -83,6 +82,31 @@ IDs and bounds with values from your model::
 Run the script from the environment configured for OpenMC::
 
    python optimize.py
+
+Use Bayesian optimization
+-------------------------
+
+Select the surrogate-guided method in the same API call. Scikit-learn is
+installed with the standard package install. Here ``population_size`` sets the
+number of initial space-filling samples, and ``generations`` sets the maximum
+number of additional sequential evaluations::
+
+   optimizer = OpenMCOptimizer(
+       model_dir=project_dir / "model",
+       variables=[...],
+       method="bayesian",
+       population_size=16,
+       generations=25,
+       target_keff=1.0,
+       keff_tolerance=0.005,
+       seed=14,
+   )
+
+Bayesian optimization evaluates candidates sequentially and proposes each new
+point using Gaussian-process predictions of the objective and keff constraint.
+It can be useful when each OpenMC run is costly and the number of design
+variables is modest. The runtime still depends on the configured number of
+OpenMC evaluations and the cost of fitting the surrogate.
 
 The optimizer infers assembly root-cell IDs for common nested lattice
 geometries. If inference is unsuitable for a model, provide explicit IDs with

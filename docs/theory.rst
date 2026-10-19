@@ -3,7 +3,7 @@ Theory and methods
 
 This page describes how the optimizer represents candidate designs, estimates
 assembly power peaking factor (PPF), and searches the design space with a
-genetic algorithm (GA).
+genetic algorithm (GA) or constrained Bayesian optimization (BO).
 
 Optimization problem
 --------------------
@@ -245,3 +245,52 @@ for each generation. The candidate CSV records unique candidate vectors that
 required an OpenMC run, along with their PPF and tally summary values.
 
 Further details and a runnable script are in :doc:`example`.
+
+Bayesian optimization
+---------------------
+
+Bayesian optimization is available with ``method="bayesian"``; scikit-learn
+is installed as a required project dependency. It is a sequential method: it first
+evaluates a space-filling Latin-hypercube design, then fits Gaussian-process
+(GP) surrogate models to the observed objective and keff constraint. Each
+later OpenMC run is selected from a random candidate pool using the GP
+predictions and their uncertainty. Thus, unlike the GA, it spends each new
+evaluation where the current surrogate estimates a useful trade-off between
+improvement and uncertainty.
+
+When keff is not constrained, the method uses expected improvement (EI) over
+the best observed objective. For a predicted objective mean :math:`\mu`,
+standard deviation :math:`\sigma`, and best feasible observed loss
+:math:`f_{\min}`, minimization EI is:
+
+.. math::
+
+   \operatorname{EI}(\mathbf{x})=(f_{\min}-\mu)\Phi(z)+\sigma\phi(z),
+   \qquad z=\frac{f_{\min}-\mu}{\sigma},
+
+where :math:`\Phi` and :math:`\phi` are the standard normal cumulative
+distribution and density. With a keff target, a second GP predicts the signed
+feasibility measure
+
+.. math::
+
+   g(\mathbf{x})=|k_{\mathrm{eff}}(\mathbf{x})-k_{\mathrm{target}}|-\tau_k.
+
+Values at or below zero satisfy the tolerance. Once a feasible observation
+exists, the acquisition score is EI multiplied by the GP-estimated
+probability that :math:`g(\mathbf{x})\le 0`. Before feasibility is observed,
+the optimizer chooses points with an optimistic predicted constraint value to
+seek the feasible region. The keff tally standard deviation is used as an
+approximation to constraint observation noise; PPF uncertainty is not
+currently modeled.
+
+``population_size`` controls the initial design size, and ``generations`` is
+the maximum number of additional single-candidate evaluations. The optimizer
+stops early if the best observed candidate reaches ``target_ppf`` and the keff
+tolerance, when configured. GP models are fit on normalized parameter
+coordinates and use a Matérn covariance with a white-noise term. The candidate
+pool currently contains 4096 random points per proposal. BO is often a useful
+choice when OpenMC evaluations are expensive and the parameter dimension is
+modest, but model quality can degrade in high-dimensional spaces or with very
+noisy tallies. The selected candidate is still the best measured OpenMC
+result, not the GP's predicted optimum.

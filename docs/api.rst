@@ -21,6 +21,7 @@ variables to ``OpenMCOptimizer``. All arguments are keyword-only::
        *,
        model_dir,
        variables,
+       method="genetic",
        assembly_cell_ids=None,
        target_ppf=None,
        target_keff=None,
@@ -43,6 +44,11 @@ variables to ``OpenMCOptimizer``. All arguments are keyword-only::
 Arguments
 ~~~~~~~~~
 
+``method``
+   Search method: ``"genetic"`` (default) or ``"bayesian"``. Bayesian
+   optimization uses a Gaussian-process surrogate. Scikit-learn is installed
+   as a required project dependency.
+
 ``model_dir``
    Required path to the directory containing the OpenMC XML model. It must
    contain at least ``geometry.xml``, ``materials.xml``, and ``settings.xml``.
@@ -61,14 +67,15 @@ Arguments
    match the assemblies used by the model.
 
 ``target_ppf``
-   Optional positive PPF threshold. The GA stops early when the best candidate
-   meets this PPF threshold and, if configured, the keff target tolerance.
+   Optional positive PPF threshold. The selected method stops early when its
+   best candidate meets this PPF threshold and, if configured, the keff target
+   tolerance.
 
 ``target_keff``
    Optional positive effective multiplication factor target. Candidates within
-   ``keff_tolerance`` are considered feasible; among feasible candidates the GA
-   minimizes the weighted loss. Before any candidate is feasible, it prioritizes
-   candidates closest to the target keff.
+   ``keff_tolerance`` are considered feasible; among feasible candidates the
+   optimizer minimizes the weighted loss. Both methods prioritize candidates
+   closer to the target while no feasible candidate has been found.
 
 ``keff_tolerance``
    Absolute tolerance around ``target_keff``. Defaults to ``0.005``. A candidate
@@ -93,35 +100,37 @@ Arguments
    ``results`` relative to the current working directory.
 
 ``population_size``
-   Number of candidates in the first generation. Must be at least 10. The
-   population then shrinks by ``population_reduction_rate`` after each
-   generation, rounded down, until it reaches the minimum size of 10.
+   For the genetic method, number of candidates in the first generation. For
+   Bayesian optimization, number of samples in the initial Latin-hypercube
+   design. Must be at least 10.
 
 ``population_reduction_rate``
-   Fraction by which each generation's population is reduced. Defaults to
-   ``0.20`` (20%). Must be in ``[0, 1)``. Set to ``0`` to keep the population
-   size constant; the minimum population size remains 10.
+   Genetic algorithm only. Fraction by which each generation's population is
+   reduced. Defaults to ``0.20`` (20%). Must be in ``[0, 1)``. Set to ``0`` to
+   keep the population size constant; the minimum population size remains 10.
 
 ``generations``
-   Maximum number of generations. Must be at least 1.
+   For the genetic method, maximum number of generations. For Bayesian
+   optimization, maximum number of sequential surrogate-guided evaluations
+   after the initial design. Must be at least 1.
 
 ``elite_count``
-   Maximum number of top candidates copied unchanged to the next generation.
+   Genetic algorithm only. Maximum number of top candidates copied unchanged to the next generation.
    Must be at least 1 and less than the initial ``population_size``. As the
    population shrinks, the elite count is capped to leave at least one slot
    for a new child.
 
 ``mutation_rate``
-   Probability that each child parameter is mutated independently. Must be
+   Genetic algorithm only. Probability that each child parameter is mutated independently. Must be
    between 0 and 1 inclusive.
 
 ``mutation_scale``
-   Standard deviation of a mutation as a fraction of that parameter's bounds
+   Genetic algorithm only. Standard deviation of a mutation as a fraction of that parameter's bounds
    range. Must be non-negative. A value of 0 disables mutation changes even
    when a parameter is selected for mutation.
 
 ``seed``
-   Integer seed for the genetic algorithm's random choices. It does not remove
+   Integer seed for the selected method's random choices. It does not remove
    OpenMC Monte Carlo uncertainty.
 
 ``openmc_command``
