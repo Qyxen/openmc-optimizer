@@ -18,7 +18,7 @@ python -m pip install -e .
 
 ## Documentation
 
-For detailed user guild please visit: [OpenMC Optimizer Documentation](https://qyxen.github.io/openmc-optimizer/example.html)
+For detailed user guild please visit: [OpenMC Optimizer Documentation](https://qyxen.github.io/openmc-optimizer/)
 
 ## Limitations in this initial implementation
 
