@@ -290,7 +290,7 @@ def _expected_improvement(mean, standard_deviation, incumbent, np):
     safe_std = [max(float(value), 1.0e-12) for value in standard_deviation]
     z = [float(delta) / sigma for delta, sigma in zip(improvement, safe_std)]
     return np.asarray([
-        max(0.0, float(delta) * _normal_cdf(value)
+        max(0.0, float(delta) * _normal_cdf(value, np)
             + sigma * _normal_pdf(value))
         for delta, value, sigma in zip(improvement, z, safe_std)
     ])
