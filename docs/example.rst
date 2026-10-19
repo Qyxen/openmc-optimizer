@@ -140,9 +140,11 @@ PPF and output files
 The optimizer uses a weighted loss combining normalized PPF and keff terms
 for candidates that satisfy the configured keff tolerance. Set
 ``ppf_weight``, ``keff_weight``, and ``ppf_scale`` to control the tradeoff.
-The PPF definition is::
+The PPF definition is:
 
-   PPF = maximum assembly power / mean assembly power
+.. math::
+
+   \mathrm{PPF}=\frac{\max_i P_i}{\frac{1}{N}\sum_{i=1}^{N}P_i}.
 
 The optimizer adds a ``fission-q-recoverable`` tally over assembly instances.
 Use at least two assembly instances and ensure each tallied assembly has

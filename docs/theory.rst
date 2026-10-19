@@ -9,12 +9,15 @@ Optimization problem
 --------------------
 
 Each candidate design is a vector of bounded real-valued parameters
-``x = (x_1, x_2, ..., x_n)``. The OpenMC model is modified using those values,
+:math:`\mathbf{x}=(x_1,x_2,\ldots,x_n)`. The OpenMC model is modified using those values,
 then run to estimate assembly powers and k-effective. The objective is to
 minimize a normalized weighted loss over candidates meeting the optional keff
-constraint::
+constraint:
 
-   minimize_x loss(PPF(x), keff(x))
+.. math::
+
+   \underset{\mathbf{x}}{\operatorname{minimize}}\;
+   \mathcal{L}\bigl(\operatorname{PPF}(\mathbf{x}),k_{\mathrm{eff}}(\mathbf{x})\bigr)
 
 subject to the lower and upper bounds supplied for every parameter. An
 optional ``target_keff`` defines a feasibility constraint: a candidate is
@@ -25,12 +28,16 @@ default absolute tolerance is 0.005. An optional ``target_ppf`` is an early
 stopping threshold; when both targets are supplied, both must be met before
 early stopping.
 
-Within the feasible set, candidates are ranked by normalized weighted loss::
+Within the feasible set, candidates are ranked by normalized weighted loss:
 
-   PPF_score = max(PPF - 1, 0) / ppf_scale
-   keff_score = abs(keff - target_keff) / keff_tolerance
-   loss = (ppf_weight * PPF_score + keff_weight * keff_score)
-          / (ppf_weight + keff_weight)
+.. math::
+
+   \begin{aligned}
+   S_{\mathrm{PPF}} &= \frac{\max(\mathrm{PPF}-1,\,0)}{s_{\mathrm{PPF}}}, \\
+   S_k &= \frac{|k_{\mathrm{eff}}-k_{\mathrm{target}}|}{\tau_k}, \\
+   \mathcal{L} &= \frac{w_{\mathrm{PPF}}S_{\mathrm{PPF}}+w_kS_k}
+                        {w_{\mathrm{PPF}}+w_k}.
+   \end{aligned}
 
 The default weights are 0.7 for PPF and 0.3 for keff, and the default
 ``ppf_scale`` is 0.5. The scale makes PPF excess dimensionless and comparable
@@ -43,10 +50,13 @@ Assembly power peaking factor
 -----------------------------
 
 For each assembly instance ``i``, the optimizer obtains an integrated
-``fission-q-recoverable`` tally value ``P_i``. It calculates::
+``fission-q-recoverable`` tally value :math:`P_i`. It calculates:
 
-   mean_power = (1 / N) * sum(P_i for i = 1 ... N)
-   PPF = max(P_i) / mean_power
+.. math::
+
+   \overline{P}=\frac{1}{N}\sum_{i=1}^{N}P_i,
+   \qquad
+   \mathrm{PPF}=\frac{\max_i P_i}{\overline{P}}.
 
 Here ``N`` is the number of tallied assembly instances. Equal assembly
 instances are weighted equally in the mean. Since every instance uses the
@@ -70,10 +80,13 @@ Material design variables
 material. Without a ``normalization_group``, the supplied value ``f`` is a
 fraction of the **whole material composition**, measured on the configured
 atom (``ao``) or weight (``wo``) basis. If the other entries have fractions
-``x_i``, the updated composition is::
+:math:`x_i`, the updated composition is:
 
-   selected component: f
-   each other entry i: (1 - f) * x_i / sum(x_j for all other entries j)
+.. math::
+
+   f_{\mathrm{selected}}'=f,
+   \qquad
+   f_i'=(1-f)\frac{x_i}{\sum_{j\ne\mathrm{selected}}x_j}.
 
 Thus, the non-selected entries retain their relative proportions and share the
 remaining fraction. If a component is not already listed, the adapter adds it
@@ -92,10 +105,12 @@ other coupled rules such as oxide stoichiometry unless they are represented by
 the group.
 
 ``VolumeFraction`` mixes a target material with a component material using a
-physical volume fraction ``v``. Given their initial densities ``rho_t`` and
-``rho_c``, the mixture density is::
+physical volume fraction :math:`v`. Given their initial densities :math:`\rho_t`
+and :math:`\rho_c`, the mixture density is:
 
-   rho_mix = (1 - v) * rho_t + v * rho_c
+.. math::
+
+   \rho_{\mathrm{mix}}=(1-v)\rho_t+v\rho_c.
 
 The mass contribution of each nuclide or element is based on its material's
 volume share, density, and weight fraction. The adapter combines these mass
@@ -109,10 +124,13 @@ Genetic algorithm
 -----------------
 
 The genetic algorithm is a bounded, real-valued search. A candidate, also
-called an individual, is a vector with one real number for each parameter::
+called an individual, is a vector with one real number for each parameter:
 
-   x = (x_1, x_2, ..., x_n)
-   lower_j <= x_j <= upper_j
+.. math::
+
+   \mathbf{x}=(x_1,x_2,\ldots,x_n),
+   \qquad
+   \ell_j\le x_j\le u_j.
 
 For example, if the design varies U-235 fractions in two materials, a
 candidate contains one fraction for the first material and one for the
@@ -128,9 +146,11 @@ The user sets ``population_size`` for the first generation; it must be at
 least 10. The algorithm creates that many candidates. Every parameter in each
 candidate is drawn independently from a uniform distribution over that
 parameter's ``(lower, upper)`` interval. It then replaces the first candidate
-with the vector of interval midpoints::
+with the vector of interval midpoints:
 
-   x_j = (lower_j + upper_j) / 2
+.. math::
+
+   x_j=\frac{\ell_j+u_j}{2}.
 
 This ensures that the center point is included in every run. It does not imply
 that the center is a good design; it is simply one reproducible starting
@@ -183,10 +203,13 @@ can combine values from both parents. There is no separate crossover-rate
 setting: this choice is made for every child gene.
 
 After crossover, each parameter is mutated independently with probability
-``mutation_rate``. When selected, a zero-mean Gaussian perturbation is added::
+``mutation_rate``. When selected, a zero-mean Gaussian perturbation is added:
 
-   sigma_j = mutation_scale * (upper_j - lower_j)
-   x'_j = x_j + Normal(mean=0, standard_deviation=sigma_j)
+.. math::
+
+   \sigma_j=m(u_j-\ell_j),
+   \qquad
+   x_j'=x_j+\mathcal{N}(0,\sigma_j^2),
 
 The resulting value is clipped to the parameter's bounds. Thus,
 ``mutation_scale`` is relative to each parameter's own range, even when the

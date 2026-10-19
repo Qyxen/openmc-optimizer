@@ -2,7 +2,7 @@ project = "OpenMC Optimizer"
 author = "OpenMC Optimizer contributors"
 release = "0.1.0"
 
-extensions = []
+extensions = ["sphinx.ext.mathjax"]
 root_doc = "index"
 templates_path = []
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]

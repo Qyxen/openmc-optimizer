@@ -72,7 +72,8 @@ Arguments
 
 ``keff_tolerance``
    Absolute tolerance around ``target_keff``. Defaults to ``0.005``. A candidate
-   is feasible when ``abs(keff - target_keff) <= keff_tolerance``. This setting
+   is feasible when :math:`|k_{\mathrm{eff}}-k_{\mathrm{target}}|\le\tau_k`.
+   This setting
    is ignored when ``target_keff`` is ``None``.
 
 ``ppf_weight`` and ``keff_weight``
@@ -84,8 +85,8 @@ Arguments
 
 ``ppf_scale``
    Positive normalization scale for PPF excess above 1. Defaults to ``0.5``.
-   The normalized PPF term is ``max(PPF - 1, 0) / ppf_scale``; the normalized
-   keff term is the absolute target deviation divided by ``keff_tolerance``.
+   The normalized PPF term is :math:`\max(\mathrm{PPF}-1,0)/s_{\mathrm{PPF}}`;
+   the normalized keff term is :math:`|k_{\mathrm{eff}}-k_{\mathrm{target}}|/\tau_k`.
 
 ``work_dir``
    Directory for candidate runs and optimization outputs. Defaults to
