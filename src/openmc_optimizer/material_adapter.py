@@ -7,10 +7,23 @@ from pathlib import Path
 import re
 
 
-ELEMENT_MASSES = {
-    "O": 15.999, "Mo": 95.95, "Gd": 157.25, "U": 238.02891,
-    "Zr": 91.224, "Pu": 244.0, "Np": 237.0, "Am": 243.0,
-}
+def _element_atomic_weight(element: str) -> float:
+    """Get an element's natural-abundance atomic weight from OpenMC."""
+    try:
+        import openmc
+    except ImportError as error:
+        raise RuntimeError(
+            "OpenMC is required to convert atom fractions for element entries "
+            "during volume-fraction mixing"
+        ) from error
+
+    try:
+        return float(openmc.data.atomic_weight(element))
+    except ValueError as error:
+        raise ValueError(
+            f"OpenMC has no natural atomic weight for element {element!r}; "
+            "represent it with explicit nuclide entries instead"
+        ) from error
 
 
 def _species_weight_fractions(material: ET.Element) -> dict[tuple[str, str], float]:
@@ -25,11 +38,12 @@ def _species_weight_fractions(material: ET.Element) -> dict[tuple[str, str], flo
             weight = float(node.attrib["wo"])
         elif "ao" in node.attrib:
             atom_fraction = float(node.attrib["ao"])
-            mass = ELEMENT_MASSES.get(name)
-            if mass is None:
+            if kind == "element":
+                mass = _element_atomic_weight(name)
+            else:
                 match = re.match(r"^[A-Za-z]+(\d+)", name)
                 if match is None:
-                    raise ValueError(f"Add an atomic mass for element {name} to ELEMENT_MASSES")
+                    raise ValueError(f"Invalid nuclide name: {name}")
                 mass = float(match.group(1))
             weight = atom_fraction * mass
         else:

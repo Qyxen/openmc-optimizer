@@ -263,6 +263,12 @@ cell. Increasing the component volume fraction replaces a corresponding
 volume share of the target recipe; the component source material remains
 available as its input recipe.
 
+When converting atom-based ``element`` entries to mass fractions, the adapter
+uses OpenMC's ``openmc.data.atomic_weight`` for naturally occurring elements.
+An element without a natural isotopic abundance has no unique average atomic
+weight; represent it with explicit nuclide entries instead of an ``element``
+entry.
+
 ``OptimizationResult``
 ----------------------
 

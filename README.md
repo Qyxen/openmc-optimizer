@@ -1,11 +1,13 @@
 # OpenMC Optimizer
 
-A small, project-style optimization driver for OpenMC models. It provides a
-bounded real-valued genetic algorithm and constrained Bayesian optimization.
-Both methods minimize assembly power peaking factor (PPF), optionally while
-keeping k-effective within a user-set tolerance of a target. The design
-variables are independent of the objective, so either method can vary
-enrichment or Gd₂O₃ rod loading using the built-in material adapter.
+OpenMC Optimizer is a Python toolkit for optimizing OpenMC reactor models. It
+provides bounded genetic algorithm and constrained Bayesian optimization
+methods to minimize the power peaking factor (PPF), with an optional
+k-effective target and tolerance constraint. Design variables are independent
+of the search method. The built-in material adapter can vary an element or
+nuclide fraction in a material, or mix two material recipes by volume. These
+generic operations support a wide range of material studies, including fuel
+enrichment and absorber loading.
 
 ## Install
 
@@ -16,6 +18,11 @@ Then install this project:
 python -m pip install -e .
 ```
 
+Install the released package:
+```bash
+pip install openmc-optimizer
+```
+
 Scikit-learn is installed as a required dependency, so both optimization
 methods are available after the standard install.
 
@@ -23,12 +30,5 @@ methods are available after the standard install.
 
 For detailed user guild please visit: [OpenMC Optimizer Documentation](https://qyxen.github.io/openmc-optimizer/)
 
-## Limitations in this initial implementation
-
-- Candidate evaluations run sequentially; GA randomness is reproducible from
-  the configured seed.
-- The built-in PPF tally assumes assembly root-cell IDs can be supplied and
-  that `fission-q-recoverable` is appropriate for the model.
-- Runtime, memory, and tally precision depend on the user's OpenMC settings.
-- Generic material fractions rescale all other entries proportionally; they
-  do not model coupled recipe or chemistry constraints.
+## Citation
+Cite this project using the metadata in [CITATION.cff](CITATION.cff).
