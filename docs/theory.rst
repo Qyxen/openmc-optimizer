@@ -49,8 +49,10 @@ the smallest keff deviation.
 Assembly power peaking factor
 -----------------------------
 
-For each assembly instance ``i``, the optimizer obtains an integrated
-``fission-q-recoverable`` tally value :math:`P_i`. It calculates:
+For each power region ``i``, the optimizer obtains an integrated tally value
+:math:`P_i` proportional to regional power. By default, these regions are
+assembly instances tallied with ``fission-q-recoverable``. With a user tally,
+they are the bins of its selected spatial filter. It calculates:
 
 .. math::
 
@@ -58,15 +60,21 @@ For each assembly instance ``i``, the optimizer obtains an integrated
    \qquad
    \mathrm{PPF}=\frac{\max_i P_i}{\overline{P}}.
 
-Here ``N`` is the number of tallied assembly instances. Equal assembly
-instances are weighted equally in the mean. Since every instance uses the
-same tally score and normalization, this ratio is independent of the overall
-power normalization. A uniform distribution has PPF 1; larger values indicate
-more variation in assembly power.
+Here ``N`` is the number of regions returned by the tally. Each region is
+weighted equally in the mean. Since the same tally score and normalization
+are used for all bins, the ratio is independent of the overall power
+normalization. A uniform distribution has PPF 1; larger values indicate more
+variation in regional power.
 
-The worker creates a ``CellInstanceFilter`` and scores
-``fission-q-recoverable`` with the tracklength estimator. By default, it
-searches nested lattices for assembly root cells. This inference is intended
+By default, the worker creates a ``CellInstanceFilter`` and scores
+``fission-q-recoverable`` with the tracklength estimator. The user may instead
+name a compatible tally from ``tallies.xml`` with ``ppf_tally_name`` and
+select its score with ``ppf_tally_score``. A custom tally must return one
+integrated, power-proportional value per spatial region, with one region
+filter and the total nuclide bin. The optimizer computes the maximum divided
+by the arithmetic mean across those values; it cannot infer region boundaries
+or combine extra filter, energy, or nuclide bins on the user's behalf. By
+default, it searches nested lattices for assembly root cells. This inference is intended
 for common core/assembly lattice hierarchies. If the inferred cells are not
 the intended assemblies, provide ``assembly_cell_ids`` explicitly. Those IDs
 should identify geometry cells filled by assembly lattices. The model should
@@ -104,9 +112,14 @@ material instead. This mechanism supports any named group, but does not model
 other coupled rules such as oxide stoichiometry unless they are represented by
 the group.
 
-``VolumeFraction`` mixes a target material with a component material using a
-physical volume fraction :math:`v`. Given their initial densities :math:`\rho_t`
-and :math:`\rho_c`, the mixture density is:
+``VolumeFraction`` modifies the target material to become the output mixture
+used by the cell, adding a physical volume fraction :math:`v` of the component
+material's recipe. For UO2--Gd2O3, the target ID is the UO2 fuel material
+assigned to the cell (or a separate output mixture material assigned there),
+and the component ID is the Gd2O3 source recipe. The geometry continues to
+refer to the target material ID; the component ID is an input recipe and does
+not need to be assigned to the cell. Given their initial densities
+:math:`\rho_t` and :math:`\rho_c`, the resulting mixture density is:
 
 .. math::
 
@@ -117,8 +130,10 @@ volume share, density, and weight fraction. The adapter combines these mass
 contributions and normalizes the resulting composition by total mass. Both
 source materials therefore need valid compositions and explicit densities in
 ``g/cm3``. The target material's density and composition are updated in the
-candidate model; the source component material is retained as the recipe
-definition.
+candidate model, so any cell that uses that target ID sees the new mixture.
+The source component material is retained as the recipe definition. If the
+original target recipe must also remain unchanged, use a distinct output
+mixture material and make the cell reference it before optimization.
 
 Genetic algorithm
 -----------------

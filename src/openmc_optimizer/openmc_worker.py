@@ -1,4 +1,4 @@
-"""Run one prepared candidate model and calculate its assembly PPF."""
+"""Run one prepared candidate model and calculate its PPF."""
 
 from __future__ import annotations
 
@@ -17,6 +17,8 @@ def main() -> None:
     parser.add_argument("--statepoint", required=True)
     parser.add_argument("--assembly-cell-ids", required=True)
     parser.add_argument("--openmc-command", required=True)
+    parser.add_argument("--ppf-tally-name", default="")
+    parser.add_argument("--ppf-tally-score", default="fission-q-recoverable")
     args = parser.parse_args()
 
     command = json.loads(args.openmc_command)
@@ -28,6 +30,8 @@ def main() -> None:
             if args.assembly_cell_ids else None
         ),
         command,
+        args.ppf_tally_name or None,
+        args.ppf_tally_score,
     )
     (args.directory / "ppf_result.json").write_text(json.dumps(result, indent=2) + "\n")
 

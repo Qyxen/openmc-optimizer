@@ -17,6 +17,7 @@ search methods.
 
    theory
    example
+   vver_example
    api
 
 Publishing

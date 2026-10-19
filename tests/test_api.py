@@ -3,6 +3,17 @@ import pytest
 from openmc_optimizer import MaterialFraction, OpenMCOptimizer, VolumeFraction
 
 
+def test_material_fraction_defaults_to_atom_fraction():
+    variable = MaterialFraction(
+        material_id=1,
+        component="U235",
+        bounds=(0.01, 0.05),
+    )
+
+    assert variable.basis == "ao"
+    assert variable.binding()["basis"] == "ao"
+
+
 def test_material_fraction_requires_bounds_within_zero_and_one(tmp_path):
     with pytest.raises(ValueError, match="MaterialFraction bounds"):
         OpenMCOptimizer(

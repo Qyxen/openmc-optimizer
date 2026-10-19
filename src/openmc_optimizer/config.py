@@ -24,6 +24,8 @@ class ProjectConfig:
     adapter_options: dict[str, Any]
     openmc_command: tuple[str, ...]
     statepoint_file: str
+    ppf_tally_name: str | None
+    ppf_tally_score: str
     assembly_cell_ids: tuple[int, ...] | None
     target_ppf: float | None
     target_keff: float | None

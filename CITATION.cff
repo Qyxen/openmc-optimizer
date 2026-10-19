@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: >-
+  If you use OpenMC Optimizer in your work, please cite it as software.
+title: OpenMC Optimizer
+type: software
+authors:
+  - family-names: Kabiraj
+    given-names: Hridoy
+    orcid: https://orcid.org/0009-0001-4737-710X
+version: 0.1.0
+repository-code: https://github.com/qyxen/openmc-optimizer

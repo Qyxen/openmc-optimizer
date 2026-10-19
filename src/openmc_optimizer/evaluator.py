@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -62,6 +63,8 @@ class OpenMCEvaluator:
                 else ",".join(map(str, self.config.assembly_cell_ids))
             ),
             "--openmc-command", json.dumps(self.config.openmc_command),
+            "--ppf-tally-name", self.config.ppf_tally_name or "",
+            "--ppf-tally-score", self.config.ppf_tally_score,
         ]
         subprocess.run(command, check=True)
         ppf_path = candidate_dir / "ppf_result.json"
@@ -79,37 +82,73 @@ def evaluate_openmc(
     statepoint_name: str,
     assembly_cell_ids: list[int] | None,
     openmc_command: tuple[str, ...],
+    ppf_tally_name: str | None = None,
+    ppf_tally_score: str = "fission-q-recoverable",
 ) -> dict:
-    """Load XML, add the optimizer-owned assembly power tally, run OpenMC, compute PPF."""
+    """Run OpenMC and compute PPF from built-in or user-supplied tally bins."""
     try:
         import openmc
     except ImportError as error:
         raise RuntimeError("OpenMC Python bindings are required to evaluate candidates") from error
 
-    geometry = openmc.Geometry.from_xml(path=str(directory / "geometry.xml"))
-    geometry.determine_paths(instances_only=True)
-    all_cells = geometry.get_all_cells()
-    if assembly_cell_ids is None:
-        assembly_cell_ids = infer_assembly_cell_ids(geometry, openmc)
-    instances = []
-    for cell_id in assembly_cell_ids:
-        if cell_id not in all_cells:
-            raise ValueError(f"Assembly root cell ID {cell_id} is absent from geometry.xml")
-        cell = all_cells[cell_id]
-        instances.extend((cell, instance) for instance in range(cell.num_instances))
-    if len(instances) < 2:
-        raise ValueError("PPF requires at least two assembly instances")
-
-    # Tally's automatic ID counter is independent of IDs loaded from tallies.xml.
-    # Assign an ID above the model's existing tallies to avoid collisions when
-    # candidate models already define tally 1 (as this SMR model does).
     tallies = openmc.Tallies.from_xml(path=str(directory / "tallies.xml")) if (directory / "tallies.xml").exists() else openmc.Tallies()
-    next_tally_id = max((tally.id for tally in tallies), default=0) + 1
-    tally = openmc.Tally(name="optimizer_assembly_power", tally_id=next_tally_id)
-    tally.filters = [openmc.CellInstanceFilter(instances)]
-    tally.scores = ["fission-q-recoverable"]
-    tally.estimator = "tracklength"
-    tallies.append(tally)
+    if ppf_tally_name is None:
+        geometry = openmc.Geometry.from_xml(path=str(directory / "geometry.xml"))
+        geometry.determine_paths(instances_only=True)
+        all_cells = geometry.get_all_cells()
+        if assembly_cell_ids is None:
+            assembly_cell_ids = infer_assembly_cell_ids(geometry, openmc)
+        instances = []
+        for cell_id in assembly_cell_ids:
+            if cell_id not in all_cells:
+                raise ValueError(f"Assembly root cell ID {cell_id} is absent from geometry.xml")
+            cell = all_cells[cell_id]
+            instances.extend((cell, instance) for instance in range(cell.num_instances))
+        if len(instances) < 2:
+            raise ValueError("PPF requires at least two assembly instances")
+
+        # Tally's automatic ID counter is independent of IDs loaded from tallies.xml.
+        # Assign an ID above the model's existing tallies to avoid collisions.
+        next_tally_id = max((tally.id for tally in tallies), default=0) + 1
+        tally = openmc.Tally(name="optimizer_assembly_power", tally_id=next_tally_id)
+        tally.filters = [openmc.CellInstanceFilter(instances)]
+        tally.scores = [ppf_tally_score]
+        tally.estimator = "tracklength"
+        tallies.append(tally)
+        tally_name = "optimizer_assembly_power"
+    else:
+        tally_name = ppf_tally_name
+        try:
+            tally = tallies.get_by_name(tally_name)
+        except KeyError as error:
+            raise ValueError(
+                f"User PPF tally {tally_name!r} was not found in tallies.xml"
+            ) from error
+        if ppf_tally_score not in tally.scores:
+            raise ValueError(
+                f"User PPF tally {tally_name!r} does not include score "
+                f"{ppf_tally_score!r}"
+            )
+        region_filter_types = {
+            "CellFilter",
+            "CellInstanceFilter",
+            "DistribcellFilter",
+            "MaterialFilter",
+            "MeshFilter",
+            "UniverseFilter",
+        }
+        if (
+            len(tally.filters) != 1
+            or type(tally.filters[0]).__name__ not in region_filter_types
+            or list(tally.nuclides) != ["total"]
+        ):
+            raise ValueError(
+                "A custom PPF tally must have exactly one supported spatial "
+                "region filter (cell, cell instance, distribcell, material, "
+                "mesh, or universe) and one total nuclide bin. Each bin must "
+                "represent one spatial region's integrated power."
+            )
+
     tallies.export_to_xml(path=str(directory / "tallies.xml"))
 
     subprocess.run(list(openmc_command), cwd=directory, check=True)
@@ -117,25 +156,34 @@ def evaluate_openmc(
     if not statepoint_path.exists():
         raise FileNotFoundError(f"OpenMC did not produce {statepoint_path}")
     with openmc.StatePoint(str(statepoint_path)) as statepoint:
-        values = statepoint.get_tally(name="optimizer_assembly_power").get_values(
-            scores=["fission-q-recoverable"], value="mean"
+        power_values = statepoint.get_tally(name=tally_name).get_values(
+            scores=[ppf_tally_score], value="mean"
         ).reshape(-1)
         keff = getattr(statepoint, "keff", None)
         if keff is None:
             # Compatibility with OpenMC versions before StatePoint.keff.
             keff = statepoint.k_combined
-    if len(values) != len(instances) or any(value <= 0 for value in values):
-        raise ValueError("Assembly tally is incomplete or contains nonpositive power values")
-    mean_power = float(values.mean())
-    max_index = int(values.argmax())
+    if len(power_values) < 2 or any(
+        not math.isfinite(float(value)) or float(value) <= 0.0
+        for value in power_values
+    ):
+        raise ValueError("PPF tally must contain at least two positive regional power values")
+    mean_power = float(power_values.mean())
+    max_index = int(power_values.argmax())
     return {
-        "ppf": float(values[max_index] / mean_power),
+        "ppf": float(power_values[max_index] / mean_power),
         "keff": float(keff.nominal_value),
         "keff_std_dev": float(keff.std_dev),
-        "assembly_count": len(values),
+        "assembly_count": len(power_values),
+        "power_region_count": len(power_values),
+        "ppf_tally_name": tally_name,
+        "ppf_tally_score": ppf_tally_score,
         "mean_assembly_power": mean_power,
-        "max_assembly_power": float(values[max_index]),
+        "mean_region_power": mean_power,
+        "max_assembly_power": float(power_values[max_index]),
+        "max_region_power": float(power_values[max_index]),
         "max_power_assembly_index": max_index,
+        "max_power_region_index": max_index,
         "assembly_cell_ids": assembly_cell_ids,
     }
 

@@ -9,6 +9,14 @@ description = "Genetic and Bayesian optimization workflows for OpenMC models"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["scikit-learn>=1.4,<2"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]

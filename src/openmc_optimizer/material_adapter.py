@@ -202,7 +202,7 @@ def apply_parameters(values: dict[str, float], model_dir: Path, options: dict) -
                 int(binding["material_id"]),
                 str(binding["component"]),
                 str(binding.get("component_type", "nuclide")),
-                str(binding.get("basis", "wo")),
+                str(binding.get("basis", "ao")),
                 float(value),
                 (
                     None

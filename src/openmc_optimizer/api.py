@@ -29,7 +29,7 @@ class MaterialFraction:
     bounds: tuple[float, float]
     name: str | None = None
     component_type: str = "nuclide"
-    basis: str = "wo"
+    basis: str = "ao"
     normalization_group: tuple[str, ...] | None = None
 
     @property
@@ -96,7 +96,7 @@ class OpenMCOptimizer:
 
     Parameters are provided as ``MaterialFraction`` or ``VolumeFraction``
     objects. The optimizer copies XML inputs for every
-    candidate, edits the material recipe, adds an assembly-power tally, runs
+    candidate, edits the material recipe, adds or reads a power tally, runs
     OpenMC, and minimizes a weighted PPF/keff loss. If ``target_keff`` is set,
     candidates must be within ``keff_tolerance`` before the loss ranks them.
     """
@@ -108,6 +108,8 @@ class OpenMCOptimizer:
         variables: list[DesignVariable],
         method: str = "genetic",
         assembly_cell_ids: list[int] | tuple[int, ...] | None = None,
+        ppf_tally_name: str | None = None,
+        ppf_tally_score: str = "fission-q-recoverable",
         target_ppf: float | None = None,
         target_keff: float | None = None,
         keff_tolerance: float = 0.005,
@@ -133,6 +135,10 @@ class OpenMCOptimizer:
             not assembly_cell_ids or any(cell_id <= 0 for cell_id in assembly_cell_ids)
         ):
             raise ValueError("assembly_cell_ids must contain positive cell IDs")
+        if ppf_tally_name is not None and not ppf_tally_name.strip():
+            raise ValueError("ppf_tally_name must be non-empty when provided")
+        if not ppf_tally_score.strip():
+            raise ValueError("ppf_tally_score must be non-empty")
         if len({variable.parameter_name for variable in variables}) != len(variables):
             raise ValueError("Design variable names must be unique")
         if population_size < 10:
@@ -201,6 +207,8 @@ class OpenMCOptimizer:
             adapter_options={"bindings": bindings},
             openmc_command=tuple(str(item) for item in openmc_command),
             statepoint_file=statepoint_file,
+            ppf_tally_name=ppf_tally_name,
+            ppf_tally_score=ppf_tally_score,
             assembly_cell_ids=(
                 None if assembly_cell_ids is None
                 else tuple(int(item) for item in assembly_cell_ids)
@@ -239,6 +247,8 @@ class OpenMCOptimizer:
             ("PPF normalization scale", f"{config.ppf_scale:g}"),
             ("Random seed", str(config.seed)),
             ("Statepoint file", config.statepoint_file),
+            ("PPF tally", config.ppf_tally_name or "optimizer assembly power"),
+            ("PPF score", config.ppf_tally_score),
         ]
         if config.method == "genetic":
             initial_data.extend([
@@ -373,9 +383,15 @@ class OpenMCOptimizer:
                 "keff_std_dev",
                 "objective_loss",
                 "assembly_count",
+                "power_region_count",
                 "mean_assembly_power",
+                "mean_region_power",
                 "max_assembly_power",
+                "max_region_power",
                 "max_power_assembly_index",
+                "max_power_region_index",
+                "ppf_tally_name",
+                "ppf_tally_score",
                 "assembly_cell_ids",
                 *parameter_columns,
             ]

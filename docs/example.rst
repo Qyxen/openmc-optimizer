@@ -19,8 +19,8 @@ Place the model XML files in one directory. At minimum, the model needs
 XML files needed by the model, such as ``tallies.xml``. Make sure the OpenMC
 cross-section data path is configured in the environment.
 
-Define and run an optimization
-------------------------------
+Define and run a GA optimization
+--------------------------------
 
 Create a Python script such as ``optimize.py``. Replace the sample material
 IDs and bounds with values from your model::
@@ -33,6 +33,7 @@ IDs and bounds with values from your model::
 
    optimizer = OpenMCOptimizer(
        model_dir=project_dir / "model",
+       method="genetic",
        variables=[
            MaterialFraction(
                material_id=11,
@@ -142,21 +143,29 @@ For example, to vary the weight fraction of gadolinium-155 in material 90::
        name="Gd155_fraction",
    )
 
-``VolumeFraction`` mixes two complete material recipes by physical volume.
-For example, to vary the volume fraction of a Gd2O3 recipe mixed into a fuel
-material::
+``VolumeFraction`` updates one material to represent the resulting mixture
+of two complete recipes by physical volume. ``target_material_id`` is the
+output material and should be the material assigned to the fuel cell. The
+component material supplies the added recipe; it does not need to be assigned
+to that cell. For example, if material 20 is the UO2 material used by the fuel
+cell and material 90 is a Gd2O3 recipe, this varies the Gd2O3 share in the
+cell's fuel material::
 
    from openmc_optimizer import VolumeFraction
 
    VolumeFraction(
-       target_material_id=20,
-       component_material_id=90,
+       target_material_id=20,      # Output mixture; used by the fuel cell.
+       component_material_id=90,   # Gd2O3 source recipe.
        bounds=(0.0, 0.10),
        name="Gd2O3_loading",
    )
 
 For volume mixing, both materials need explicit densities in ``g/cm3`` and
-composition definitions in ``materials.xml``.
+composition definitions in ``materials.xml``. The optimizer modifies material
+20 in each candidate, so the fuel cell continues to use material 20 with the
+new UO2--Gd2O3 mixture composition and density. If the original UO2 material
+must remain unchanged, define a separate output mixture material and assign
+that material to the fuel cell before optimization.
 
 PPF and output files
 --------------------
@@ -170,9 +179,30 @@ The PPF definition is:
 
    \mathrm{PPF}=\frac{\max_i P_i}{\frac{1}{N}\sum_{i=1}^{N}P_i}.
 
-The optimizer adds a ``fission-q-recoverable`` tally over assembly instances.
-Use at least two assembly instances and ensure each tallied assembly has
-positive fission power. Existing ``tallies.xml`` content is retained.
+By default, the optimizer adds a ``fission-q-recoverable`` tally over
+assembly instances. Use at least two assembly instances and ensure each
+tallied assembly has positive fission power. Existing ``tallies.xml`` content
+is retained.
+
+To use a tally that you defined in ``tallies.xml``, pass its name with
+``ppf_tally_name``. Its selected score must provide one integrated,
+power-proportional value for each spatial region, using one region filter and
+the total nuclide bin. For example, if your tally is named
+``fuel_region_power`` and contains the ``fission-q-recoverable`` score::
+
+   optimizer = OpenMCOptimizer(
+       model_dir="model",
+       variables=[...],
+       ppf_tally_name="fuel_region_power",
+       ppf_tally_score="fission-q-recoverable",
+   )
+
+The optimizer computes :math:`\max(P_i)/\operatorname{mean}(P_i)` from those
+regional values. It does not guess how to combine energy groups, nuclides, or
+other extra tally bins. If the custom tally's bins are not one comparable
+power value per region, define a compatible tally or reduce it yourself
+before using it for PPF. If ``ppf_tally_name`` is omitted, the optimizer
+creates its built-in assembly tally.
 
 The work directory contains candidate model files and OpenMC outputs. The
 ``optimization_summary.json`` file records the best parameter values, best

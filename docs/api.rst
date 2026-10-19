@@ -23,6 +23,8 @@ variables to ``OpenMCOptimizer``. All arguments are keyword-only::
        variables,
        method="genetic",
        assembly_cell_ids=None,
+       ppf_tally_name=None,
+       ppf_tally_score="fission-q-recoverable",
        target_ppf=None,
        target_keff=None,
        keff_tolerance=0.005,
@@ -65,6 +67,26 @@ Arguments
    cells. If omitted, the optimizer attempts to infer suitable cells from the
    nested lattice structure. Supply IDs explicitly if inference does not
    match the assemblies used by the model.
+
+``ppf_tally_name``
+   Optional name of a user-defined tally already present in ``tallies.xml``.
+   When provided, the optimizer uses this tally instead of creating its
+   built-in assembly power tally. The tally must have exactly one spatial
+   filter, one total nuclide bin, and one value per region for the selected
+   score. Supported filters are cell, cell-instance, distribcell, material,
+   mesh, and universe. Those bins must represent integrated,
+   power-proportional values over the regions whose peaking factor you want
+   to minimize. The optimizer
+   calculates :math:`\max(P_i)/\operatorname{mean}(P_i)` over the returned
+   values. It cannot infer whether arbitrary tally bins represent comparable
+   regions or a power measure, so that compatibility is the user's
+   responsibility. If omitted, the built-in assembly tally is used and
+   ``assembly_cell_ids`` controls its regions.
+
+``ppf_tally_score``
+   Score read from the selected PPF tally. Defaults to
+   ``"fission-q-recoverable"``. The score must be power-proportional and must
+   be present in the user tally when ``ppf_tally_name`` is set.
 
 ``target_ppf``
    Optional positive PPF threshold. The selected method stops early when its
@@ -160,7 +182,7 @@ Defines a variable for the fraction of one nuclide or element in a material::
        bounds,
        name=None,
        component_type="nuclide",
-       basis="wo",
+       basis="ao",
        normalization_group=None,
    )
 
@@ -186,7 +208,8 @@ Defines a variable for the fraction of one nuclide or element in a material::
 
 ``basis``
    Either ``"wo"`` for weight fraction or ``"ao"`` for atom fraction.
-   Defaults to ``"wo"``. Every nuclide and element entry in the selected
+   Defaults to ``"ao"``, matching OpenMC's default atom-percent basis. Every
+   nuclide and element entry in the selected
    material must use the chosen basis in ``materials.xml``.
 
 ``normalization_group``
@@ -202,7 +225,8 @@ Defines a variable for the fraction of one nuclide or element in a material::
 ``VolumeFraction``
 ------------------
 
-Defines a physical-volume mixture between two materials::
+Defines a physical-volume mixture by updating the target material with a
+specified volume share of the component material::
 
    VolumeFraction(
        target_material_id,
@@ -212,12 +236,19 @@ Defines a physical-volume mixture between two materials::
    )
 
 ``target_material_id``
-   Positive OpenMC material ID whose recipe and density will be modified in
-   each candidate.
+   Positive OpenMC material ID that receives the mixture composition and
+   density for each candidate. This is the **output mixture material**. It
+   should be the material assigned to the geometry cell where the mixture is
+   intended to be used. For a UO2--Gd2O3 fuel mixture, this is the UO2 fuel
+   material ID already referenced by the fuel cell, or a separate mixture
+   material ID if the geometry has been set up to use one.
 
 ``component_material_id``
-   Positive OpenMC material ID used as the component recipe. Its composition
-   and density are read from ``materials.xml``.
+   Positive OpenMC material ID whose recipe is added to the target mixture.
+   Its composition and density are read from ``materials.xml``. For a
+   UO2--Gd2O3 fuel mixture, this is the Gd2O3 material ID. It serves as an
+   input recipe; the geometry cell does not need to reference this material
+   separately.
 
 ``bounds``
    Inclusive lower and upper physical volume fractions in ``[0, 1]``.
@@ -226,8 +257,11 @@ Defines a physical-volume mixture between two materials::
    Optional unique parameter name. Defaults to
    ``"volume_fraction_{target_material_id}_{component_material_id}"``.
 
-Both materials need explicit densities in ``g/cm3``. Increasing the volume
-fraction replaces a corresponding share of the target material.
+Both materials need explicit densities in ``g/cm3``. The target material is
+modified in the candidate XML and remains the material used by its geometry
+cell. Increasing the component volume fraction replaces a corresponding
+volume share of the target recipe; the component source material remains
+available as its input recipe.
 
 ``OptimizationResult``
 ----------------------
