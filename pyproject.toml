@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openmc-optimizer"
+version = "0.1.0"
+description = "Genetic-algorithm optimization workflows for OpenMC models"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
