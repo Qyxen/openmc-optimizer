@@ -1,8 +1,8 @@
-Python API example
-==================
+Examples
+========
 
-This page shows a complete setup for minimizing assembly power peaking factor
-(PPF) while meeting a target k-effective with the OpenMC Optimizer Python API.
+This page shows a complete setup for optimizing assembly power peaking factor
+(PPF) and k-effective with the OpenMC Optimizer Python API.
 The API edits copies of the model XML files for each genetic algorithm
 candidate, adds its PPF tally, runs OpenMC, and reads PPF and keff from each
 statepoint.
@@ -137,7 +137,10 @@ composition definitions in ``materials.xml``.
 PPF and output files
 --------------------
 
-The built-in objective is::
+The optimizer uses a weighted loss combining normalized PPF and keff terms
+for candidates that satisfy the configured keff tolerance. Set
+``ppf_weight``, ``keff_weight``, and ``ppf_scale`` to control the tradeoff.
+The PPF definition is::
 
    PPF = maximum assembly power / mean assembly power
 
@@ -147,10 +150,10 @@ positive fission power. Existing ``tallies.xml`` content is retained.
 
 The work directory contains candidate model files and OpenMC outputs. The
 ``optimization_summary.json`` file records the best parameter values, best
-PPF, target status, and per-generation history. Each evaluated candidate also
+PPF, keff, weighted loss, target status, and per-generation history. Each evaluated candidate also
 gets a ``ppf_result.json`` result file. The optimizer exports
-``optimization_history.csv`` with each generation's best and mean PPF and the
-generation's best parameter values. It also writes
+``optimization_history.csv`` with each generation's population size, best and
+mean metrics, and the generation's best parameter values. It also writes
 ``optimization_candidates.csv`` with the metrics and parameter values for
 each unique candidate that required an OpenMC run. CSV file paths are
 available as ``result.history_csv`` and ``result.candidates_csv``.

@@ -67,7 +67,7 @@ Arguments
 ``target_keff``
    Optional positive effective multiplication factor target. Candidates within
    ``keff_tolerance`` are considered feasible; among feasible candidates the GA
-   minimizes PPF. Before any candidate is feasible, it prioritizes the
+   minimizes the weighted loss. Before any candidate is feasible, it prioritizes
    candidates closest to the target keff.
 
 ``keff_tolerance``
