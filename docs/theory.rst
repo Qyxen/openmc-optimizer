@@ -294,3 +294,137 @@ choice when OpenMC evaluations are expensive and the parameter dimension is
 modest, but model quality can degrade in high-dimensional spaces or with very
 noisy tallies. The selected candidate is still the best measured OpenMC
 result, not the GP's predicted optimum.
+
+Surrogate model
+~~~~~~~~~~~~~~~
+
+Bayesian optimization is useful when evaluating the real model is expensive.
+It does not use the GP to replace OpenMC or to report an unevaluated design as
+the answer. Instead, it alternates between running OpenMC at selected points
+and updating a surrogate that predicts how PPF, keff, and the objective loss
+vary over the design space. The surrogate helps decide which point to run
+next.
+
+Before fitting a GP, each variable is mapped to the unit interval. For
+parameter :math:`j`, with bounds :math:`[\ell_j,u_j]`, the normalized value is
+
+.. math::
+
+   z_j=\frac{x_j-\ell_j}{u_j-\ell_j}, \qquad 0\le z_j\le 1.
+
+This makes distances comparable when parameters have different units or
+bound widths. The initial design uses Latin-hypercube sampling: each
+parameter's interval is divided into :math:`n` equal strata, one point is
+placed in every stratum, and the strata are independently shuffled between
+parameters. This spreads the initial points across each range. The first
+point is replaced by the midpoint of all parameter bounds. ``population_size``
+sets :math:`n`, the number of initial simulations.
+
+After the initial runs, the implementation fits a Gaussian process (GP) using
+a Matérn covariance kernel with :math:`\nu=2.5` plus a white-noise kernel.
+The Matérn kernel describes how quickly nearby designs are expected to have
+similar responses; its length scales are estimated from the observations.
+The white-noise term allows for variation that should not be fit as a smooth
+trend. A GP prediction has a mean :math:`\mu(\mathbf{x})` and standard
+deviation :math:`\sigma(\mathbf{x})`. The mean is the predicted response;
+the standard deviation represents the model's uncertainty at that point.
+Predictions are typically more informed close to observed designs and less
+certain in unexplored regions.
+
+The GP is refit after every new OpenMC result. To select each next point, the
+optimizer scores 4096 random points in normalized parameter space and
+chooses the point with the highest acquisition score. Points extremely close
+to previous samples are removed. This finite candidate pool makes the
+acquisition search practical, but a narrow promising region can be missed if
+the random pool does not sample it.
+
+Expected improvement
+~~~~~~~~~~~~~~~~~~~~
+
+Without a keff constraint, the acquisition function is expected improvement
+(EI) for minimization. Let :math:`f_{\min}` be the best measured objective
+loss, and let :math:`\mu(\mathbf{x})` and :math:`\sigma(\mathbf{x})` be the
+GP mean and standard deviation of loss. Define
+
+.. math::
+
+   z=\frac{f_{\min}-\mu(\mathbf{x})}{\sigma(\mathbf{x})}.
+
+Then EI is
+
+.. math::
+
+   \operatorname{EI}(\mathbf{x})=
+   (f_{\min}-\mu(\mathbf{x}))\Phi(z)+\sigma(\mathbf{x})\phi(z),
+
+where :math:`\Phi` is the standard normal cumulative distribution function
+and :math:`\phi` is its probability density function. The first term rewards
+points whose predicted mean is below the best measured loss. The second term
+rewards uncertainty when it leaves a chance of a large improvement. Thus, EI
+balances exploitation of promising predictions with exploration of
+uncertain regions. A small positive floor is applied to predicted standard
+deviations for numerical stability.
+
+Keff feasibility and weighted loss
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With ``target_keff``, the optimizer also fits a constraint GP to
+
+.. math::
+
+   g(\mathbf{x})=
+   |k_{\mathrm{eff}}(\mathbf{x})-k_{\mathrm{target}}|-\tau_k.
+
+A design is feasible when :math:`g(\mathbf{x})\le 0`, meaning its measured
+keff is within ``keff_tolerance``. Before any feasible result exists, there
+is no feasible incumbent for EI. During this phase, the optimizer chooses the
+candidate with the most optimistic lower confidence bound,
+:math:`\mu_g-2\sigma_g`, to search for the feasible region. The uncertainty
+term means a candidate can be worth evaluating even when its predicted keff
+deviation is not yet within tolerance.
+
+After a feasible result exists, EI is based on the best feasible measured
+loss. It is multiplied by the GP probability that a proposed point satisfies
+the keff constraint:
+
+.. math::
+
+   P(g(\mathbf{x})\le 0)=
+   \Phi\!\left(-\frac{\mu_g(\mathbf{x})}{\sigma_g(\mathbf{x})}\right),
+   \qquad
+   a(\mathbf{x})=\operatorname{EI}(\mathbf{x})P(g(\mathbf{x})\le 0).
+
+This favors points that are promising for the objective and likely to meet
+the constraint. It is a proposal score; the final ranking uses actual OpenMC
+results, requiring feasibility before comparing objective loss. The
+objective GP is trained on the scalar weighted-loss formula, including the
+keff contribution for infeasible observations, while the separate constraint
+GP guides feasibility. An infeasible result cannot be returned as the best
+candidate just because its modeled loss is low.
+
+Monte Carlo noise and practical limits
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The statepoint's keff standard deviation is used as an approximate noise
+estimate for the constraint GP. The objective GP's noise estimate includes
+the weighted keff uncertainty contribution when a keff target is active.
+PPF tally uncertainty is not currently modeled. Consequently, the surrogate
+may treat noisy PPF values as more precise than they are. More particles or
+batches can improve tally precision, but increase the cost of every OpenMC
+evaluation. Repeated runs at the same design are not currently used to
+estimate PPF uncertainty.
+
+``generations`` is the maximum number of sequential proposals after the
+initial design, so the run can evaluate up to
+``population_size + generations`` candidates. It stops early if the best
+measured result reaches ``target_ppf`` and meets the keff constraint, when
+configured. Each proposal waits for the previous OpenMC run and GP refit;
+this implementation does not evaluate BO candidates in parallel. The
+returned design is the best feasible measured candidate (or the closest-keff
+measured candidate if none is feasible), not the GP's unverified prediction.
+
+GP surrogates generally become less informative as the number of design
+variables rises, because a finite number of samples covers less of the
+growing design space. BO does not guarantee a global optimum. Increasing the
+initial design and proposal budget or comparing multiple random seeds can
+provide a broader search, at the cost of additional OpenMC runs.
