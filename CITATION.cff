@@ -7,5 +7,5 @@ authors:
   - family-names: Kabiraj
     given-names: Hridoy
     orcid: https://orcid.org/0009-0001-4737-710X
-version: 0.1.0
+version: 0.1.1
 repository-code: https://github.com/qyxen/openmc-optimizer
