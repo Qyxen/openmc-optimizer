@@ -123,6 +123,7 @@ class OpenMCOptimizer:
         elite_count: int = 2,
         mutation_rate: float = 0.15,
         mutation_scale: float = 0.12,
+        surrogate_evaluation_fraction: float = 0.5,
         seed: int = 1,
         openmc_command: list[str] | tuple[str, ...] = ("openmc",),
         statepoint_file: str = "statepoint.100.h5",
@@ -151,6 +152,8 @@ class OpenMCOptimizer:
             not 0.0 <= mutation_rate <= 1.0 or mutation_scale < 0.0
         ):
             raise ValueError("Invalid genetic algorithm mutation settings")
+        if method == "genetic" and not 0.0 < surrogate_evaluation_fraction <= 1.0:
+            raise ValueError("surrogate_evaluation_fraction must be in (0, 1]")
         if target_ppf is not None and target_ppf <= 0.0:
             raise ValueError("target_ppf must be positive")
         if target_keff is not None and target_keff <= 0.0:
@@ -225,6 +228,7 @@ class OpenMCOptimizer:
             elite_count=elite_count,
             mutation_rate=mutation_rate,
             mutation_scale=mutation_scale,
+            surrogate_evaluation_fraction=surrogate_evaluation_fraction,
             seed=seed,
             parameters=tuple(parameters),
         )
@@ -259,6 +263,7 @@ class OpenMCOptimizer:
                 ("Elite count", str(config.elite_count)),
                 ("Mutation rate", f"{config.mutation_rate:g}"),
                 ("Mutation scale", f"{config.mutation_scale:g}"),
+                ("Surrogate evaluation fraction", f"{config.surrogate_evaluation_fraction:g}"),
             ])
         else:
             initial_data.extend([
@@ -291,6 +296,7 @@ class OpenMCOptimizer:
                 elite_count=config.elite_count,
                 mutation_rate=config.mutation_rate,
                 mutation_scale=config.mutation_scale,
+                surrogate_evaluation_fraction=config.surrogate_evaluation_fraction,
                 seed=config.seed,
                 target_ppf=config.target_ppf,
                 target_keff=config.target_keff,
@@ -350,7 +356,8 @@ class OpenMCOptimizer:
             fieldnames = [
                 "generation", "best_ppf", "mean_ppf", "best_keff", "mean_keff",
                 "population_size", "keff_within_tolerance", "best_objective_loss",
-                "mean_objective_loss",
+                "mean_objective_loss", "simulations_this_generation",
+                "unique_evaluations", "population_diversity",
                 *parameter_columns,
             ]
             writer = csv.DictWriter(stream, fieldnames=fieldnames)
@@ -366,6 +373,9 @@ class OpenMCOptimizer:
                     "keff_within_tolerance": row["keff_within_tolerance"],
                     "best_objective_loss": row["best_objective_loss"],
                     "mean_objective_loss": row["mean_objective_loss"],
+                    "simulations_this_generation": row.get("simulations_this_generation"),
+                    "unique_evaluations": row.get("unique_evaluations"),
+                    "population_diversity": row.get("population_diversity"),
                 }
                 csv_row.update({
                     f"parameter_{name}": value

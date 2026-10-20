@@ -174,51 +174,86 @@ sample. The other initial values depend on ``seed``.
 Fitness evaluation and ranking
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Each candidate in a generation is evaluated, then candidates are sorted by
-feasibility and weighted loss. The generation's population size, best and
-mean PPF and keff, and objective loss are recorded in the history. The
-optimizer tracks the best candidate found over the full run separately from
-the current generation's best.
+The full initial population is evaluated. Each evaluated candidate receives
+an objective loss when it satisfies the keff constraint. With no keff target,
+the loss is the normalized PPF excess. When a keff target is active, the
+algorithm uses lexicographic ranking:
 
-OpenMC evaluations are performed sequentially. Their cost usually dominates
-the GA's arithmetic, so ``population_size`` controls how many candidates are
-considered in the first generation. Repeated identical parameter
-vectors are retrieved from an in-memory cache and do not trigger another
-OpenMC run. This cache is exact-value based; near-equal candidates are still
-evaluated separately.
+* feasible candidates rank ahead of infeasible candidates;
+* feasible candidates rank by weighted loss;
+* if no feasible candidate exists, candidates rank by absolute keff deviation,
+  then by PPF.
+
+The full objective is therefore not a penalty that can trade away keff
+feasibility. Loss is ``None`` for a measured candidate outside the keff
+tolerance.
+
+In later generations, the GA creates an offspring proposal pool of about
+three times the reduced target population size and uses a Random Forest
+surrogate to choose which proposals receive costly OpenMC evaluations. Let
+``N`` be the reduced target population size, ``r`` be
+``surrogate_evaluation_fraction``, and ``M`` be the number of unique,
+uncached proposals available. The generation's evaluation budget is
+
+.. math::
+
+   B=\min\left(M,\max\left(2,\lceil Nr\rceil\right)\right).
+
+The initial ``population_size`` is always evaluated in full. By default,
+``r=0.5`` evaluates about half of each later target population, with at least
+two proposals when available. Previously measured candidates are carried
+forward without rerunning OpenMC. Surrogate rankings can be wrong, especially
+early in a high-dimensional search when few measurements are available.
+
+Repeated parameter vectors are retrieved from an in-memory cache and do not
+trigger another OpenMC run. Cache keys round each parameter value to 12
+decimal places. A failed candidate receives a worst-case score and the GA
+continues if other simulations succeed. If every candidate evaluation fails,
+the optimizer raises an error.
+
+The generation history records population size, best and mean PPF and keff,
+objective loss, number of OpenMC runs in that generation, cumulative unique
+evaluations, and normalized population diversity. The optimizer returns the
+best successfully evaluated candidate found over the full run.
 
 Elitism and parent selection
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-After a generation is evaluated, the next population is reduced by the
-user-configured ``population_reduction_rate``, rounded down, with a minimum
-size of 10. Elitism copies up to
-``elite_count`` of the top candidates unchanged into that smaller population;
-the count is capped to leave at least one slot for a new child. These
-candidates do not undergo crossover or mutation. This keeps strong solutions
-available for later generations and carries the best generation member
-forward.
+The target population is reduced by ``population_reduction_rate``, rounded
+down, with a minimum target size of 10 (or the initial size when it is below
+10). Up to ``elite_count`` of the best measured candidates are carried
+unchanged into the next generation. New offspring are screened by the
+surrogate, and only the selected portion is evaluated with OpenMC. The
+remaining slots are selected from the prior measured population and newly
+evaluated offspring. Existing measured candidates are carried forward without
+rerunning OpenMC.
 
-The remaining positions are filled with children. To choose each parent, the
-algorithm samples up to three members of the current generation, without
-replacement within that tournament, and selects the member ranked highest by
-the fitness criterion. It runs this selection twice for each child. The two selections are
-independent, so the same individual can be selected as both parents. A
-three-member tournament gives good candidates a higher chance of reproduction
-while still allowing weaker candidates to be selected. Candidate quality uses
-the same feasibility and weighted-loss ranking as generation sorting.
+Offspring are generated from tournament-selected parents. For each parent,
+the algorithm samples up to three members of the current generation without
+replacement within that tournament, then selects the member ranked highest by
+the fitness criterion. The two parent selections are independent, so the same
+individual can be selected twice. A three-member tournament favors stronger
+candidates while retaining a chance for other candidates to reproduce. Around
+10% of the proposal pool is random immigrants; this grows to around 30% when
+diversity is low. The number is rounded down, with at least one immigrant.
 
 Crossover and mutation
 ~~~~~~~~~~~~~~~~~~~~~~
 
-The algorithm uses uniform, per-parameter crossover. For every parameter in
-a child, it copies the value from the first or second parent with equal
-probability. The choice is made independently for each parameter, so a child
-can combine values from both parents. There is no separate crossover-rate
-setting: this choice is made for every child gene.
+The algorithm uses blend crossover. For each parameter ``j``, it samples
+``alpha`` uniformly from ``[0, 1]`` and forms
 
-After crossover, each parameter is mutated independently with probability
-``mutation_rate``. When selected, a zero-mean Gaussian perturbation is added:
+.. math::
+
+   x_j^{(child)}=\alpha x_j^{(parent1)}+(1-\alpha)x_j^{(parent2)}.
+
+This interpolates between the parents for that coordinate. Mutation can then
+move the coordinate outside the parent interval; the final value is clipped
+to the parameter's configured bounds.
+
+After crossover, each parameter is mutated independently. The configured
+``mutation_rate`` is the starting probability and ``mutation_scale`` is the
+starting Gaussian step size, each relative to the parameter's range:
 
 .. math::
 
@@ -226,23 +261,78 @@ After crossover, each parameter is mutated independently with probability
    \qquad
    x_j'=x_j+\mathcal{N}(0,\sigma_j^2),
 
-The resulting value is clipped to the parameter's bounds. Thus,
-``mutation_scale`` is relative to each parameter's own range, even when the
-parameters use different units or interval widths. A larger mutation rate
-makes more child values change; a larger mutation scale makes those changes
-larger on average. Excessively small mutation can limit exploration, while
-large mutation can disrupt useful parameter combinations. These controls are
-heuristic and may need tuning for the model and number of design variables.
+The initial mutation probability ``r_0`` and scale ``m_0`` come from
+``mutation_rate`` and ``mutation_scale``. Let ``s`` be the number of
+consecutive generations without improvement in the best fitness key, and let
+``D`` be the mean normalized coordinate range of the active population:
+
+.. math::
+
+   D=\frac{1}{n}\sum_{j=1}^{n}
+   \frac{\max_i x_{ij}-\min_i x_{ij}}{u_j-\ell_j}.
+
+When ``D < 0.10``, the GA raises mutation probability by 0.25, multiplies the
+mutation scale by 1.5, and increases the immigrant share. Stagnation also
+raises mutation probability by ``0.08 s`` up to an additional 0.5, and
+multiplies mutation scale by ``1 + min(2, 0.25 s)``. Final mutation probability
+is capped at 0.95 and final scale at 0.5 of the parameter range. These rules
+increase exploration in response to stalled or concentrated populations;
+they are heuristics, not a guarantee of global convergence.
+
+Surrogate screening
+~~~~~~~~~~~~~~~~~~~
+
+The GA normalizes each parameter to ``[0, 1]`` before fitting a
+``RandomForestRegressor`` with 64 trees and a minimum leaf size of two. The
+model's training target is a continuous proxy loss. With no keff target, this is the
+normalized PPF excess. With a keff target, it is
+
+.. math::
+
+   \widetilde{\mathcal{L}}=
+   \frac{w_{\mathrm{PPF}}S_{\mathrm{PPF}}+
+   w_k\,|k_{\mathrm{eff}}-k_{\mathrm{target}}|/\max(\tau_k,10^{-6})}
+   {w_{\mathrm{PPF}}+w_k}.
+
+Unlike the final fitness ranking, this proxy is defined for infeasible points
+too. It lets the screening model learn which proposals may improve keff
+feasibility as well as PPF. For each proposal, the ensemble estimates a mean
+``mu`` and standard deviation ``sigma`` across its trees. Proposals rank by
+the lower-confidence score
+
+.. math::
+
+   a(\mathbf{x})=\mu(\mathbf{x})-0.5\,\sigma(\mathbf{x}),
+
+with smaller scores preferred. The uncertainty term gives some preference to
+points where the trees disagree. Selection then greedily enforces at least
+0.02 normalized Euclidean distance between chosen points when possible; if
+that leaves too few, it fills the remaining budget by score order.
+
+If there are fewer than three successful simulations, or Random Forest fitting
+or prediction fails, the GA selects proposals randomly and continues. Failed
+simulations are cached with a worst-case score and excluded from surrogate
+training. If every simulation fails, the optimizer raises an error.
+The surrogate reduces OpenMC evaluations after the initial population, but
+its predictions are approximate; inspect the recorded metrics and repeat runs
+with different seeds when solution confidence matters.
+
+Console progress output names the active model, reports the proposal pool size
+and the number of candidates selected for OpenMC, and lists each selected
+candidate's predicted loss, ensemble uncertainty, and parameter values. If
+there is too little training data or Random Forest fails, the output reports
+that proposals are being selected randomly. The measured OpenMC metrics and
+best candidate are then printed as the generation proceeds.
 
 Next generation and termination
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Each next generation contains the unchanged elite candidates plus newly
-created children until it reaches the previous generation's size multiplied
-by ``1 - population_reduction_rate``, rounded down to a minimum of 10. This
-process repeats for at most
-``generations`` generations. After evaluating a full generation,
-the algorithm stops early if that generation's best candidate meets
+The first generation uses ``population_size`` OpenMC evaluations, except
+where duplicate points are served from cache. Later generations generate an
+offspring pool about three times the target population size and evaluate the
+best surrogate-ranked unique proposals according to the budget equation above.
+The process repeats for at most ``generations`` generations. The algorithm
+stops early if its best evaluated candidate meets
 ``target_ppf`` and, when configured, the keff tolerance. Otherwise, it stops
 after the requested final generation. The history uses zero-based generation
 numbers, while the progress message prints generation counts starting at one.
@@ -255,9 +345,10 @@ adequate particles, batches, and inactive batches in the user's OpenMC model
 for the desired precision. This GA does not estimate uncertainty, average
 repeated candidate runs, or guarantee a global optimum.
 
-The generation CSV records best and mean PPF and the best parameter vector
-for each generation. The candidate CSV records unique candidate vectors that
-required an OpenMC run, along with their PPF and tally summary values.
+The generation CSV records best and mean metrics, best parameter values,
+simulation counts, unique evaluation counts, and population diversity. The
+candidate CSV records unique candidate vectors that required an OpenMC run,
+along with their PPF and tally summary values.
 
 Further details and a runnable script are in :doc:`example`.
 

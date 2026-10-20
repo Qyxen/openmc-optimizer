@@ -38,6 +38,7 @@ variables to ``OpenMCOptimizer``. All arguments are keyword-only::
        elite_count=2,
        mutation_rate=0.15,
        mutation_scale=0.12,
+       surrogate_evaluation_fraction=0.5,
        seed=1,
        openmc_command=("openmc",),
        statepoint_file="statepoint.100.h5",
@@ -151,6 +152,15 @@ Arguments
    range. Must be non-negative. A value of 0 disables mutation changes even
    when a parameter is selected for mutation.
 
+``surrogate_evaluation_fraction``
+   Genetic algorithm only. Fraction of the reduced population used as the
+   evaluation budget for surrogate-screened offspring in each later
+   generation. Defaults to ``0.5`` and must be in ``(0, 1]``. The initial
+   population is always evaluated in full. A value of ``1.0`` evaluates all
+   selected offspring; smaller values reduce OpenMC runs but rely more on the
+   surrogate's ranking. At least two proposals are evaluated per later
+   generation when available.
+
 ``seed``
    Integer seed for the selected method's random choices. It does not remove
    OpenMC Monte Carlo uncertainty.
@@ -168,8 +178,10 @@ Methods
 
 ``run()``
    Executes the optimization and returns an ``OptimizationResult``. It raises
-   an exception if the model directory, XML inputs, OpenMC execution, or PPF
-   tally evaluation fails.
+   an exception if the model directory or XML inputs are invalid, if a
+   Bayesian candidate evaluation fails, or if all GA candidate evaluations
+   fail. The GA treats an individual failed candidate as a worst-case result
+   and continues when other evaluations succeed.
 
 ``MaterialFraction``
 --------------------

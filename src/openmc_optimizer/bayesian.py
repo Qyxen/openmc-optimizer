@@ -30,6 +30,7 @@ def optimize_bayesian(
     """
     try:
         import numpy as np
+        from scipy.stats import qmc
         from sklearn.gaussian_process import GaussianProcessRegressor
         from sklearn.gaussian_process.kernels import Matern, WhiteKernel
     except ImportError as error:
@@ -78,6 +79,7 @@ def optimize_bayesian(
             keff_weight,
             ppf_scale,
             np,
+            qmc,
             GaussianProcessRegressor,
             Matern,
             WhiteKernel,
@@ -201,14 +203,20 @@ def _history_entry(generation, population_size, evaluations,
 
 
 def _propose(parameters, evaluations, rng, pool_size, target_keff,
-             keff_tolerance, ppf_weight, keff_weight, ppf_scale, np,
+             keff_tolerance, ppf_weight, keff_weight, ppf_scale, np, qmc,
              GaussianProcessRegressor, Matern, WhiteKernel, seed):
     dimension = len(parameters)
     observed_x = np.asarray([item[2] for item in evaluations], dtype=float)
-    candidate_pool = np.asarray(
-        [[rng.random() for _ in range(dimension)] for _ in range(pool_size)],
-        dtype=float,
+    # Low-discrepancy global points cover high-dimensional spaces more evenly
+    # than iid uniform draws. Reserve half the pool for local refinement.
+    global_size = max(1, pool_size // 2)
+    sampler = qmc.Sobol(d=dimension, scramble=True, seed=seed)
+    global_pool = sampler.random(global_size)
+    local_pool = _local_candidate_pool(
+        evaluations, pool_size - global_size, dimension, target_keff,
+        keff_tolerance, np, seed,
     )
+    candidate_pool = np.vstack((global_pool, local_pool))
     distances = np.linalg.norm(
         candidate_pool[:, None, :] - observed_x[None, :, :], axis=2
     ).min(axis=1)
@@ -276,6 +284,30 @@ def _propose(parameters, evaluations, rng, pool_size, target_keff,
             acquisition = -(constraint_mean - 2.0 * constraint_std)
 
     return candidate_pool[int(np.argmax(acquisition))].tolist()
+
+
+def _local_candidate_pool(evaluations, size, dimension, target_keff,
+                          keff_tolerance, np, seed):
+    """Sample bounded neighborhoods around the most promising observations."""
+    if size <= 0:
+        return np.empty((0, dimension), dtype=float)
+    rng = np.random.default_rng(seed)
+
+    def rank(item):
+        result, _, _ = item
+        if _is_feasible(result, target_keff, keff_tolerance):
+            return (0, result["objective_loss"])
+        return (1, abs(result["keff"] - target_keff))
+
+    centers = np.asarray(
+        [item[2] for item in sorted(evaluations, key=rank)[:min(5, len(evaluations))]],
+        dtype=float,
+    )
+    # Wider neighborhoods early on, with finer local steps available too.
+    scales = np.asarray([0.25, 0.10, 0.04], dtype=float)
+    steps = rng.normal(size=(size, dimension)) * rng.choice(scales, size=(size, 1))
+    center_indices = np.arange(size) % len(centers)
+    return np.clip(centers[center_indices] + steps, 0.0, 1.0)
 
 
 def _fit_gp(GaussianProcessRegressor, kernel, x, y, noise, seed, np):

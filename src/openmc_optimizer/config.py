@@ -39,5 +39,6 @@ class ProjectConfig:
     elite_count: int
     mutation_rate: float
     mutation_scale: float
+    surrogate_evaluation_fraction: float
     seed: int
     parameters: tuple[Parameter, ...]

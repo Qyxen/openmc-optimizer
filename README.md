@@ -7,7 +7,10 @@ k-effective target and tolerance constraint. Design variables are independent
 of the search method. The built-in material adapter can vary an element or
 nuclide fraction in a material, or mix two material recipes by volume. These
 generic operations support a wide range of material studies, including fuel
-enrichment and absorber loading.
+enrichment and absorber loading. The genetic algorithm uses surrogate-guided
+offspring screening after its initial population, adaptive mutation and
+diversity preservation, duplicate-result caching, and per-candidate failure
+recovery to reduce wasted OpenMC runs.
 
 ## Install
 

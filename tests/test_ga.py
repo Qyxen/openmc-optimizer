@@ -83,3 +83,74 @@ def test_ga_prints_metrics_for_each_simulation(capsys):
     output = capsys.readouterr().out
     assert output.count("simulation ") == 2
     assert output.count("keff=1.000000, PPF=1.200000, loss=") == 2
+
+
+def test_ga_surrogate_reduces_later_generation_evaluations():
+    evaluated = []
+
+    def evaluate(candidate, generation, index):
+        evaluated.append((generation, index))
+        x = candidate["x"]
+        return {"ppf": 1.0 + (x - 0.31) ** 2}
+
+    _, _, history = optimize(
+        (Parameter("x", 0.0, 1.0),),
+        evaluate,
+        population_size=10,
+        generations=3,
+        elite_count=2,
+        mutation_rate=0.2,
+        mutation_scale=0.1,
+        seed=29,
+        target_ppf=None,
+        population_reduction_rate=0.0,
+        surrogate_evaluation_fraction=0.5,
+    )
+
+    assert history[0]["simulations_this_generation"] == 10
+    assert all(row["simulations_this_generation"] <= 5 for row in history[1:])
+    assert len(evaluated) < 10 * 3
+
+
+def test_ga_continues_after_an_individual_evaluation_failure():
+    def evaluate(candidate, generation, index):
+        if index == 0:
+            raise RuntimeError("simulated failure")
+        return {"ppf": 1.2}
+
+    best_parameters, best_result, history = optimize(
+        (Parameter("x", 0.0, 1.0),),
+        evaluate,
+        population_size=2,
+        generations=1,
+        elite_count=1,
+        mutation_rate=0.0,
+        mutation_scale=0.0,
+        seed=1,
+        target_ppf=None,
+    )
+
+    assert 0.0 <= best_parameters["x"] <= 1.0
+    assert best_result["ppf"] == 1.2
+    assert history[0]["simulations_this_generation"] == 2
+
+
+def test_ga_reports_random_forest_surrogate(capsys):
+    def evaluate(candidate, generation, index):
+        return {"ppf": 1.0 + (candidate["x"] - 0.4) ** 2}
+
+    optimize(
+        (Parameter("x", 0.0, 1.0),),
+        evaluate,
+        population_size=10,
+        generations=2,
+        elite_count=2,
+        mutation_rate=0.2,
+        mutation_scale=0.1,
+        seed=9,
+        target_ppf=None,
+        surrogate_evaluation_fraction=0.5,
+    )
+
+    output = capsys.readouterr().out
+    assert "using RandomForestRegressor" in output

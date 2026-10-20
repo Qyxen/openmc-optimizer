@@ -1,4 +1,10 @@
-from openmc_optimizer.bayesian import _best, _is_feasible, _latin_hypercube, optimize_bayesian
+from openmc_optimizer.bayesian import (
+    _best,
+    _is_feasible,
+    _latin_hypercube,
+    _local_candidate_pool,
+    optimize_bayesian,
+)
 from openmc_optimizer.config import Parameter
 
 
@@ -12,6 +18,26 @@ def test_latin_hypercube_uses_each_stratum_once_per_parameter():
         strata = {int(point[column] * 12) for point in design}
         assert strata == set(range(12))
         assert all(0.0 <= point[column] < 1.0 for point in design)
+
+
+def test_local_candidate_pool_is_bounded_and_repeatable():
+    import numpy as np
+
+    evaluations = [
+        ({"ppf": 1.1, "keff": 1.0, "objective_loss": 0.2}, {}, [0.5] * 12),
+    ]
+
+    first = _local_candidate_pool(
+        evaluations, 128, 12, 1.0, 0.005, np, seed=17
+    )
+    second = _local_candidate_pool(
+        evaluations, 128, 12, 1.0, 0.005, np, seed=17
+    )
+
+    assert first.shape == (128, 12)
+    assert np.all((first >= 0.0) & (first <= 1.0))
+    assert np.array_equal(first, second)
+    assert np.any(np.linalg.norm(first - 0.5, axis=1) < 0.5)
 
 
 def test_best_prefers_feasible_candidate_over_lower_ppf_infeasible_candidate():

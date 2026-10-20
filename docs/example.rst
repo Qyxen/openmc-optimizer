@@ -67,6 +67,7 @@ IDs and bounds with values from your model::
        elite_count=2,
        mutation_rate=0.20,
        mutation_scale=0.10,
+       surrogate_evaluation_fraction=0.5,
        seed=14,
    )
 
@@ -83,6 +84,11 @@ IDs and bounds with values from your model::
 Run the script from the environment configured for OpenMC::
 
    python optimize.py
+
+For this example, ``population_size`` controls the initial candidates.
+``surrogate_evaluation_fraction`` controls the share of the reduced population
+that is selected for OpenMC evaluation in each later generation.
+``generations`` controls how many search rounds are allowed.
 
 Use Bayesian optimization
 -------------------------
@@ -209,9 +215,12 @@ The work directory contains candidate model files and OpenMC outputs. The
 PPF, keff, weighted loss, target status, and per-generation history. Each evaluated candidate also
 gets a ``ppf_result.json`` result file. The optimizer exports
 ``optimization_history.csv`` with each generation's population size, best and
-mean metrics, and the generation's best parameter values. It also writes
-``optimization_candidates.csv`` with the metrics and parameter values for
-each unique candidate that required an OpenMC run. CSV file paths are
+mean metrics, best parameter values, number of simulations, cumulative unique
+evaluations, and population diversity. For GA runs, the initial population is
+always fully evaluated; later generations use surrogate screening, which
+reduces simulations according to ``surrogate_evaluation_fraction``. The
+optimizer also writes ``optimization_candidates.csv`` with the metrics and
+parameter values for each unique candidate that required an OpenMC run. CSV file paths are
 available as ``result.history_csv`` and ``result.candidates_csv``.
 
 The runnable project template is available at
