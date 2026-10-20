@@ -43,17 +43,25 @@ def optimize(
 
     for generation in range(generations):
         _print_population(parameters, population, generation + 1, generations)
-        scored = [(evaluate(candidate, generation, index), candidate)
-                  for index, candidate in enumerate(population)]
-        scored.sort(key=lambda item: _fitness_key(
-            item[0], target_keff, keff_tolerance,
-            ppf_weight, keff_weight, ppf_scale,
-        ))
-        for result, _ in scored:
+        scored = []
+        for index, candidate in enumerate(population):
+            result = evaluate(candidate, generation, index)
             result["objective_loss"] = _weighted_loss(
                 result, target_keff, keff_tolerance,
                 ppf_weight, keff_weight, ppf_scale,
             )
+            print(
+                f"Generation {generation + 1}/{generations}, "
+                f"simulation {index + 1}/{len(population)}: "
+                f"keff={_format_metric(result.get('keff'))}, "
+                f"PPF={result['ppf']:.6f}, "
+                f"loss={_format_loss(result['objective_loss'])}"
+            )
+            scored.append((result, candidate))
+        scored.sort(key=lambda item: _fitness_key(
+            item[0], target_keff, keff_tolerance,
+            ppf_weight, keff_weight, ppf_scale,
+        ))
         generation_result, generation_best = scored[0]
         feasible_losses = [
             result["objective_loss"] for result, _ in scored
@@ -92,8 +100,7 @@ def optimize(
         if target_keff is not None:
             status += f", keff={generation_result['keff']:.6f}"
             status += f" (target {target_keff:.6f} +/- {keff_tolerance:.6f})"
-            if generation_result["objective_loss"] is not None:
-                status += f", weighted loss={generation_result['objective_loss']:.6f}"
+        status += f", loss={_format_loss(generation_result['objective_loss'])}"
         print(
             f"Generation {generation + 1}/{generations} "
             f"(population={len(population)}): {status}"
@@ -175,6 +182,14 @@ def _weighted_loss(result, target_keff, keff_tolerance,
     keff_score = deviation / keff_tolerance if keff_tolerance > 0.0 else 0.0
     weight_sum = ppf_weight + keff_weight
     return (ppf_weight * ppf_score + keff_weight * keff_score) / weight_sum
+
+
+def _format_loss(loss):
+    return "n/a (keff outside tolerance)" if loss is None else f"{loss:.6f}"
+
+
+def _format_metric(value):
+    return "n/a" if value is None else f"{value:.6f}"
 
 
 def _print_population(parameters, population, generation, generations) -> None:

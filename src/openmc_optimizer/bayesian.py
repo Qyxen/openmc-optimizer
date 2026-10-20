@@ -56,7 +56,8 @@ def optimize_bayesian(
         )
         print(
             f"Initial sample {index + 1}/{initial_samples}: "
-            f"PPF={result['ppf']:.6f}, keff={result['keff']:.6f}"
+            f"keff={result['keff']:.6f}, PPF={result['ppf']:.6f}, "
+            f"loss={_format_loss(result.get('objective_loss'))}"
         )
 
     history = [_history_entry(0, initial_samples, evaluations, target_keff, keff_tolerance)]
@@ -101,14 +102,20 @@ def optimize_bayesian(
         )
         print(
             f"Bayesian iteration {iteration}/{iterations}: "
-            f"{feasibility}, PPF={best_result['ppf']:.6f}, "
-            f"keff={best_result['keff']:.6f}, "
-            f"loss={best_result.get('objective_loss')}"
+            f"simulation keff={result['keff']:.6f}, "
+            f"PPF={result['ppf']:.6f}, "
+            f"loss={_format_loss(result.get('objective_loss'))}; "
+            f"best {feasibility}: PPF={best_result['ppf']:.6f}, "
+            f"keff={best_result['keff']:.6f}"
         )
         if _target_met(best_result, target_ppf, target_keff, keff_tolerance):
             break
 
     return best_parameters, best_result, history
+
+
+def _format_loss(loss):
+    return "n/a (keff outside tolerance)" if loss is None else f"{loss:.6f}"
 
 
 def _latin_hypercube(size: int, dimension: int, rng: random.Random) -> list[list[float]]:

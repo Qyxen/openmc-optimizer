@@ -60,3 +60,26 @@ def test_ga_starts_with_parameter_midpoint_and_stops_on_target():
     assert len(evaluated) == 5  # It scores the complete generation before stopping.
     assert len(history) == 1
     assert history[0]["best_ppf"] == 1.0
+
+
+def test_ga_prints_metrics_for_each_simulation(capsys):
+    def evaluate(candidate, generation, index):
+        return {"ppf": 1.2, "keff": 1.0}
+
+    optimize(
+        (Parameter("x", 0.0, 1.0),),
+        evaluate,
+        population_size=2,
+        generations=1,
+        elite_count=1,
+        mutation_rate=0.0,
+        mutation_scale=0.0,
+        seed=1,
+        target_ppf=None,
+        target_keff=1.0,
+        keff_tolerance=0.01,
+    )
+
+    output = capsys.readouterr().out
+    assert output.count("simulation ") == 2
+    assert output.count("keff=1.000000, PPF=1.200000, loss=") == 2

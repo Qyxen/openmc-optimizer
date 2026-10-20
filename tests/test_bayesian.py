@@ -59,3 +59,26 @@ def test_bayesian_search_returns_bounded_candidate_and_history():
     assert best_result["objective_loss"] is not None
     assert [row["generation"] for row in history] == [0, 1, 2]
     assert history[-1]["evaluations_so_far"] == 12
+
+
+def test_bayesian_prints_loss_for_each_initial_sample(capsys):
+    def evaluate(candidate, generation, index):
+        return {"ppf": 1.2, "keff": 1.0, "keff_std_dev": 0.001}
+
+    optimize_bayesian(
+        (Parameter("x", 0.0, 1.0),),
+        evaluate,
+        initial_samples=2,
+        iterations=0,
+        seed=3,
+        target_ppf=None,
+        target_keff=1.0,
+        keff_tolerance=0.01,
+        ppf_weight=0.7,
+        keff_weight=0.3,
+        ppf_scale=0.5,
+    )
+
+    output = capsys.readouterr().out
+    assert output.count("loss=") == 2
+    assert output.count("keff=1.000000, PPF=1.200000, loss=") == 2
